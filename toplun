@@ -1,0 +1,143 @@
+#!/bin/bash
+# create script to test luns, then execute script
+# Written by Kevin Frand kfrand@yahoo.com
+# created 26 October 2017
+# shamelessly plagiarized and modified by Victor Vaile on 20210629
+
+### Set Variables
+ddcount="131072"
+ddblock="131072"
+runscript="cat"
+doexit=0
+
+#####################
+# BEGIN SUBROUTINES #
+#####################
+
+querycv () {
+	cvlist=$(cvlabel -c | sort)
+}
+
+pickarray () {
+	case $runscript in 
+		sh ) 
+			switch="DisplayMode"
+			tag="Run Mode"
+			;;
+		cat )
+			switch="RunMode"
+			tag="Display Mode"
+			;;
+	esac
+    arraylist=$(echo "$cvlist" | awk '{if(/EFI/){sub(/L[0-9]$/,"L",$1);sub(/_(vol)*[0-9][0-9]*$/,"",$1);gsub(/(^snfs_data_|_L$)/,"",$1);print $1}}' | sort -u)
+    PS3="Which array would you like to test? ($tag) "
+    select pickitem in $arraylist ALL_ARRAYS $switch EXIT
+        do
+        break
+        done
+}
+
+testarray () {
+	echo "Testing array $1 ..."
+	echo "${cvlist}" \
+	| awk '{if(/'$1'/) printf "%-16s %-32s; %-26s %s\n", "echo \"LUN ID: "$10, "Disk Label: "$1"\"", "dd if="$2, "of=/dev/null count='"$ddcount"' bs='"$ddblock"' ;echo \"\""}' | sort -k 7 \
+	| $runscript
+	printf "\nDone.\n\n"
+}
+
+processitem () {
+	case $pickitem in
+		ALL_ARRAYS )
+			for ar in $arraylist
+			do
+				testarray $ar
+			done
+			;;
+		EXIT )
+			echo "Exiting..."
+			doexit=1
+			exit
+			;;
+		RunMode )
+			runscript="sh"
+			;;
+		DisplayMode )
+			runscript="cat"
+			;;
+		* )
+			validitem=false
+			for ar in $arraylist
+			do
+				if [ "${ar}" == "${pickitem}" ]; then
+					validitem=true
+				fi
+			done
+			$validitem && testarray $pickitem || echo "Invalid Option."
+			continue
+			;;
+	esac
+}
+
+### provide usage menu
+usage() {
+    echo
+    echo "  LUN test"
+    echo "  usage: `basename $0` [-b]|[-c]|[-h|-help]"
+    echo "  -b | specify the dd blocksize.  Default is ""$ddblock"
+    echo "  -c | specify the dd count number.  Default is ""$ddcount"
+    echo "  -r | run the read test"
+    echo "  -n | echo the script but do not run"
+    echo "  -h | show the help menu"
+    exit
+}
+
+###################
+# END SUBROUTINES #
+###################
+
+### check flags
+while [ $# -gt 0 ] ; do {
+    case "${1}" in
+        -[b] )
+            shift
+            ddblock=${1}
+            shift
+            continue
+            ;;
+        -[c] )
+            shift
+            ddcount=${1}
+            shift
+            continue
+            ;;
+        -[n] )
+            runscript="cat"
+            shift
+            continue
+            ;;
+        -[r] )
+            runscript="sh"
+            shift
+            continue
+            ;;
+        -[hH] )
+            usage
+            ;;
+        * )
+            usage
+            ;;
+    esac
+} done
+
+
+##############
+# Begin Main #
+##############
+
+querycv
+
+while [ $doexit == 0 ];  do {
+	pickarray
+	processitem
+} done
+
